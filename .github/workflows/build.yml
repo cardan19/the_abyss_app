@@ -1,0 +1,75 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  # Also lets you trigger it manually from GitHub website
+  workflow_dispatch:
+
+jobs:
+
+  # ── Android Release APK ─────────────────────────────────────────────────────
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release APKs (split by architecture)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-APKs
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
+
+
+  # ── iOS IPA (unsigned — install via Sideloadly or AltStore) ────────────────
+  ios:
+    name: iOS IPA
+    runs-on: macos-latest   # ← GitHub's free Mac virtual machine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build iOS (no code signing required)
+        # --no-codesign = build the app bundle without any Apple certificate.
+        # Recipients install it using Sideloadly / AltStore, which sign it
+        # with their own free Apple ID locally on their device.
+        run: flutter build ios --release --no-codesign
+
+      - name: Package as IPA
+        run: |
+          cd build/ios/iphoneos
+          mkdir Payload
+          cp -r Runner.app Payload/Runner.app
+          zip -r -y ../../../TheAbyss.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-IPA
+          path: TheAbyss.ipa
+          retention-days: 30
