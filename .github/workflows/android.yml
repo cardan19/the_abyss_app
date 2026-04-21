@@ -1,0 +1,36 @@
+name: Android APK
+
+# Only runs when manually triggered — Android APK rarely changes
+# For automatic builds on every push, the iOS workflow handles that
+on:
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release APKs (split by architecture)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-APKs
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
