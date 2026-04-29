@@ -28,6 +28,12 @@ class AdBlocker {
     ".demdex.net",
     ".soundcloud.com",
     "w.soundcloud.com",
+    // ── Disqus-specific tracker sub-requests ─────────────────────────────
+    // These are fired by Disqus itself and add latency without benefiting users.
+    "referrer.disqus.com",       // tracks which page the embed is on
+    "links.services.disqus.com", // tracks every link click inside comments
+    ".hotjar.com",               // session recording SDK Disqus injects
+    ".clarity.ms",               // Microsoft Clarity analytics on Disqus pages
   ];
 
   static List<ContentBlocker> get contentBlockers {

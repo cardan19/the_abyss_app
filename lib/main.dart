@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:collection';
@@ -13,8 +12,7 @@ import 'members_screen.dart';
 import 'notifications_screen.dart';
 
 void main() async {
-  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const TheAbyssApp());
 }
 
@@ -56,8 +54,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
   double progress = 0;
   bool isLoadError = false;
   bool inChat = false;
-  bool _splashVisible = true;
   bool _isReloadingTheme = false;
+  bool _isStartupSplashVisible = true;
   int _currentTabIndex = 0;
   String currentTheme = 'Abyss Black';
   String customThemeUrl = '';
@@ -73,19 +71,18 @@ class _WebViewScreenState extends State<WebViewScreen> {
   List<Map<String, String>> chatRooms = [];
   String _loggedInUsername = '';
 
-  final WebUri initialUrl = WebUri('https://thesigmas.blogspot.com/');
+  final WebUri initialUrl = WebUri('about:blank');
 
   @override
   void initState() {
     super.initState();
-    FlutterNativeSplash.remove();
     _loadTheme();
-    _fetchChatRooms();
+    _initChatStartup();
 
     pullToRefreshController = PullToRefreshController(
       settings: PullToRefreshSettings(color: Colors.transparent),
       onRefresh: () async {
-        if (!_splashVisible && webViewController != null) {
+        if (webViewController != null) {
           webViewController!.reload();
         } else {
           pullToRefreshController.endRefreshing();
@@ -94,8 +91,24 @@ class _WebViewScreenState extends State<WebViewScreen> {
     );
   }
 
+  // ── Fast Startup ─────────────────────────────────────────────────────────────
+  Future<void> _initChatStartup() async {
+    // 1. Instantly load the last known chat room to skip the RSS network delay
+    final prefs = await SharedPreferences.getInstance();
+    final lastUrl = prefs.getString('lastChatRoomUrl');
+    if (lastUrl != null && lastUrl.isNotEmpty) {
+      if (webViewController != null) {
+        webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(lastUrl)));
+      } else {
+        _pendingChatUrl = lastUrl;
+      }
+    }
+    // 2. Fetch the RSS feed in the background to check for any NEW chat rooms
+    _fetchChatRooms(cachedUrl: lastUrl);
+  }
+
   // ── Chat room fetcher ────────────────────────────────────────────────────────
-  Future<void> _fetchChatRooms() async {
+  Future<void> _fetchChatRooms({String? cachedUrl}) async {
     try {
       final client = HttpClient();
       final request = await client.getUrl(Uri.parse(
@@ -133,12 +146,17 @@ class _WebViewScreenState extends State<WebViewScreen> {
         setState(() { chatRooms = rooms; });
         if (rooms.isNotEmpty) {
           final url = rooms.first['url']!;
-          if (webViewController != null) {
-            // WebView already ready — navigate immediately.
-            webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
-          } else {
-            // WebView not created yet — store the URL and navigate in onWebViewCreated.
-            _pendingChatUrl = url;
+          // Cache the latest URL so next startup is instant
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('lastChatRoomUrl', url);
+
+          // Only navigate if we didn't already load this exact URL from cache
+          if (url != cachedUrl) {
+            if (webViewController != null) {
+              webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+            } else {
+              _pendingChatUrl = url;
+            }
           }
         }
       }
@@ -171,13 +189,21 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   Future<void> _loadTheme() async {
+    // Always clear the CSS cache so a changed highlight setting is applied
+    // on the very next reload — not served stale from the in-memory cache.
+    _modifiedCssCache.clear();
+
     final prefs = await SharedPreferences.getInstance();
 
+    // Ensure a default Custom URL exists so the setting works if the user
+    // later selects it, but do NOT force the theme to 'Custom URL' on a
+    // fresh install — new users should start with the 'Abyss Black' default.
     String savedUrl = prefs.getString('customThemeUrl') ?? '';
     if (savedUrl.isEmpty) {
       savedUrl = 'https://wallpapersok.com/images/high/moon-phone-varieties-n4a209i7cv27s620.webp';
       await prefs.setString('customThemeUrl', savedUrl);
-      await prefs.setString('theme', 'Custom URL');
+      // Note: intentionally NOT writing 'theme' key here so the default
+      // remains 'Abyss Black' on a clean install.
     }
 
     if (mounted) {
@@ -232,6 +258,90 @@ class _WebViewScreenState extends State<WebViewScreen> {
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
       ));
     }
+
+    // ── Disqus passive-listener patch ─────────────────────────────────────────
+    // Must run BEFORE Disqus registers its own scroll/touch listeners.
+    // Passive listeners allow the browser to begin scrolling immediately
+    // without waiting for JS — eliminates the "sticky scroll" jank.
+    // Applied to ALL frames (forMainFrameOnly: false) so it also covers
+    // the cross-origin Disqus iframe.
+    const String passiveListenerPatchJS = '''
+      (function() {
+        if (window.__abyssPassivePatch) return;
+        window.__abyssPassivePatch = true;
+        var orig = EventTarget.prototype.addEventListener;
+        EventTarget.prototype.addEventListener = function(type, fn, opts) {
+          if (type === 'touchstart' || type === 'touchmove' ||
+              type === 'wheel'      || type === 'scroll') {
+            if (typeof opts === 'object' && opts !== null) {
+              opts = Object.assign({}, opts, { passive: true });
+            } else {
+              opts = { passive: true, capture: !!opts };
+            }
+          }
+          return orig.call(this, type, fn, opts);
+        };
+      })();
+    ''';
+    await controller.addUserScript(userScript: UserScript(
+      source: passiveListenerPatchJS,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      forMainFrameOnly: false,
+    ));
+
+    // ── Disqus performance CSS + lazy images ──────────────────────────────────
+    // Injected at document-end so the DOM is available for querySelectorAll.
+    // Also targets all frames.
+    const String disqusPerformanceJS = r'''
+      (function() {
+        if (window.__abyssPerfInjected) return;
+        window.__abyssPerfInjected = true;
+
+        // ── Performance CSS ────────────────────────────────────────────────
+        var s = document.createElement('style');
+        s.textContent = [
+          /* Hide link-preview cards — the single biggest scroll perf win.
+             Every URL in a comment triggers a separate network fetch + render. */
+          '.post-attachment,.post-attachment-meta,.media-toggle { display:none!important; }',
+          /* Hide Disqus promoted / sponsored posts */
+          '.promoted-post,.promoted-post-ad,[data-role="promoted-post"] { display:none!important; }',
+          /* Virtual-scroll hint: skip GPU painting for off-screen comments */
+          '.post { content-visibility:auto; contain-intrinsic-size:0 120px; }',
+          /* Kill all CSS transitions inside Disqus — removes jank frames */
+          '.post *,.post-list,.thread-list { transition:none!important; animation:none!important; }',
+        ].join('\n');
+        document.head && document.head.appendChild(s);
+
+        // ── Lazy-load images ──────────────────────────────────────────────
+        document.querySelectorAll('img').forEach(function(img) {
+          if (!img.loading)  img.loading  = 'lazy';
+          if (!img.decoding) img.decoding = 'async';
+        });
+
+        // Also lazy-load any images Disqus injects after initial render
+        var imgObserver = new MutationObserver(function(mutations) {
+          mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+              if (node.nodeType !== 1) return;
+              var imgs = node.nodeName === 'IMG'
+                ? [node]
+                : node.querySelectorAll ? node.querySelectorAll('img') : [];
+              imgs.forEach(function(img) {
+                if (!img.loading)  img.loading  = 'lazy';
+                if (!img.decoding) img.decoding = 'async';
+              });
+            });
+          });
+        });
+        imgObserver.observe(document.body || document.documentElement,
+          { childList: true, subtree: true });
+      })();
+    ''';
+    await controller.addUserScript(userScript: UserScript(
+      source: disqusPerformanceJS,
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+      forMainFrameOnly: false,
+    ));
 
     // Custom fast-scroll thumb
     final String fastScrollerJS = '''
@@ -334,20 +444,22 @@ class _WebViewScreenState extends State<WebViewScreen> {
   BoxDecoration _buildBackgroundDecoration() {
     if (currentTheme == 'Silk Red') {
       return const BoxDecoration(
-        color: Colors.black,
-        image: DecorationImage(image: AssetImage('assets/themes/Silk Red.jpg'), fit: BoxFit.cover),
+        gradient: LinearGradient(
+          colors: [Color(0xFF5A0000), Color(0xFF1A0000), Colors.black],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
       );
     } else if (currentTheme == 'Midnight Purple') {
       return const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF2E004F), Colors.black],
+          colors: [Color(0xFF420075), Color(0xFF16002A), Colors.black],
           begin: Alignment.topLeft, end: Alignment.bottomRight,
         ),
       );
     } else if (currentTheme == 'Deep Ocean') {
       return const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF00152F), Color(0xFF000712)],
+          colors: [Color(0xFF00224D), Color(0xFF000B1A), Colors.black],
           begin: Alignment.topCenter, end: Alignment.bottomCenter,
         ),
       );
@@ -380,7 +492,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
       hardwareAcceleration: true,
       databaseEnabled: true,
       useShouldOverrideUrlLoading: true,
-      useShouldInterceptRequest: commentHighlight != 'default', // needed for CSS injection into Disqus iframe
+      useShouldInterceptRequest: true, // always enabled; CSS injection is guarded inside the callback
       mediaPlaybackRequiresUserGesture: true,
       contentBlockers: AdBlocker.contentBlockers,
       supportMultipleWindows: true,
@@ -563,10 +675,13 @@ class _WebViewScreenState extends State<WebViewScreen> {
                             pullToRefreshController.endRefreshing();
                             setState(() { progress = 1.0; });
 
+                            if (url != null && url.toString() != 'about:blank') {
+                              setState(() { _isStartupSplashVisible = false; });
+                            }
+
                             await Future.delayed(const Duration(milliseconds: 400));
                             if (mounted) {
                               setState(() {
-                                _splashVisible = false;
                                 _isReloadingTheme = false;
                               });
                             }
@@ -738,23 +853,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       ),
                     ),
 
-                    // Splash GIF — fades out when page has loaded
-                    Positioned.fill(
-                      child: AnimatedOpacity(
-                        opacity: _splashVisible ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 400),
-                        child: IgnorePointer(
-                          ignoring: !_splashVisible,
-                          child: Image.asset(
-                            'assets/abyss.gif',
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, __, ___) =>
-                                Container(color: const Color(0xFF16151E)),
-                          ),
-                        ),
-                      ),
-                    ),
 
                     // Navigation menu button (only in chat rooms)
                     if (inChat)
@@ -772,7 +870,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       ),
 
                     // Page load progress bar
-                    if (progress < 1.0 && !_splashVisible)
+                    if (progress < 1.0)
                       Positioned(
                         bottom: 0, left: 0, right: 0,
                         child: LinearProgressIndicator(
@@ -811,6 +909,27 @@ class _WebViewScreenState extends State<WebViewScreen> {
                           ),
                         ),
                       ),
+
+                    // ── SPLASH OVERLAY ──────────────────────────────────────────
+                    IgnorePointer(
+                      ignoring: !_isStartupSplashVisible,
+                      child: AnimatedOpacity(
+                        opacity: _isStartupSplashVisible ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeOut,
+                        child: Container(
+                          color: Colors.black, // Dark background behind the GIF
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: double.infinity,
+                            child: Image.asset(
+                              'assets/abyss.gif',
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

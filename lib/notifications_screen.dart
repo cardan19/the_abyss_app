@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -168,11 +168,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       await _hiddenWebController!.scrollTo(x: 0, y: 9999999, animated: true);
     } catch (_) {}
 
-    bool _done = false;
+    bool done = false;
     int elapsed = 0;
 
     Timer.periodic(const Duration(milliseconds: 500), (timer) async {
-      if (_done) { timer.cancel(); return; }
+      if (done) { timer.cancel(); return; }
       elapsed += 500;
 
       // Re-trigger every 5 s in case the first animation didn't reach the sentinel
@@ -189,7 +189,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             int.tryParse(s?.toString().replaceAll('"', '') ?? '$beforeCount') ?? beforeCount;
 
         if (newCount > beforeCount) {
-          _done = true;
+          done = true;
           timer.cancel();
           await _extractData(_hiddenWebController!);
           if (mounted) setState(() => _isLoadingMore = false);
@@ -198,7 +198,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       } catch (_) {}
 
       if (elapsed >= 15000) {
-        _done = true;
+        done = true;
         timer.cancel();
         if (mounted) {
           setState(() => _isLoadingMore = false);
@@ -232,15 +232,19 @@ class _NotificationsScreenState extends State<NotificationsScreen>
            
            final bodyText = await controller.evaluateJavascript(source: "document.body.innerText") ?? '';
            if (bodyText.toString().toLowerCase().contains('login') || bodyText.toString().toLowerCase().contains('sign in')) {
-              if (mounted) setState(() {
-                _isLoading = false;
-                _status = 'Please sign in to Disqus in the Chat tab first.';
-              });
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                  _status = 'Please sign in to Disqus in the Chat tab first.';
+                });
+              }
            } else {
-              if (mounted) setState(() {
-                _isLoading = false;
-                _status = 'No notifications found.';
-              });
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                  _status = 'No notifications found.';
+                });
+              }
            }
         }
       } catch (e) {
@@ -303,7 +307,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             var viewLink = item.querySelector('a.view-comment') ||
                            item.querySelector('a.reply');
             if (viewLink && viewLink.href) {
-              var match = viewLink.href.match(/#(?:comment|reply)-(\d+)/);
+              var match = viewLink.href.match(/#(?:comment|reply)-(\\d+)/);
               if (match) postId = match[1];
             }
             // Fallback: data-post-id attribute on any child
@@ -699,7 +703,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                         child: ElevatedButton(
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: const Color(0xFF1C1B27),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withOpacity(0.06))),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
                                             padding: const EdgeInsets.symmetric(vertical: 14),
                                           ),
                                           onPressed: _isLoadingMore ? null : _loadMore,
@@ -722,7 +726,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                         child: ElevatedButton(
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: const Color(0xFF1C1B27),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withOpacity(0.06))),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
                                             padding: const EdgeInsets.symmetric(vertical: 14),
                                           ),
                                           onPressed: _isLoadingMore ? null : _loadMore,

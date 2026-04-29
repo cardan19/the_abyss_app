@@ -1,9 +1,9 @@
 name: Android APK
 
-# Only runs when manually triggered — Android APK rarely changes
-# For automatic builds on every push, the iOS workflow handles that
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   android:
@@ -21,16 +21,29 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Build release APKs (split by architecture)
-        run: flutter build apk --release --split-per-abi
+      # Decode the keystore from the GitHub Secret and write it to disk
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
 
-      - name: Upload APKs
+      # Build a single universal APK (no --split-per-abi) so every Android
+      # phone can install the same file — no more "wrong architecture" errors.
+      - name: Build release APK
+        env:
+          KEYSTORE_PATH: upload-keystore.jks
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: flutter build apk --release
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Android-APKs
-          path: build/app/outputs/flutter-apk/*.apk
-          retention-days: 30
+          name: TheAbyss-Android
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 90

@@ -1,0 +1,47 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:   # lets you trigger it manually from GitHub UI
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      # ── 1. Checkout code ─────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Flutter ────────────────────────────────────────────────────
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: 'stable'
+          cache: true
+
+      # ── 3. Install dependencies ──────────────────────────────────────────────
+      - name: Install pub dependencies
+        run: flutter pub get
+
+      # ── 4. Build iOS (unsigned — no Apple Developer account needed) ──────────
+      - name: Build iOS (no code signing)
+        run: flutter build ios --release --no-codesign
+
+      # ── 5. Package into .ipa ─────────────────────────────────────────────────
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r TheAbyss.ipa Payload
+          echo "IPA created successfully!"
+
+      # ── 6. Upload as downloadable artifact ───────────────────────────────────
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheAbyss-iOS-IPA
+          path: TheAbyss.ipa
+          retention-days: 30
