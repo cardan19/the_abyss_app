@@ -786,14 +786,29 @@ class _MembersScreenState extends State<MembersScreen> {
         child: ListTile(
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-          leading: CircleAvatar(
-            radius: 22,
-            backgroundColor: const Color(0xFF282436),
-            backgroundImage:
-                m.avatar.isNotEmpty ? NetworkImage(m.avatar) : null,
-            child: m.avatar.isEmpty
-                ? const Icon(Icons.person, color: Colors.white38)
-                : null,
+          leading: SizedBox(
+            width: 44,
+            height: 44,
+            child: m.avatar.isNotEmpty
+                ? ClipOval(
+                    child: Image.network(
+                      m.avatar,
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (_, __, ___) => const CircleAvatar(
+                        radius: 22,
+                        backgroundColor: Color(0xFF282436),
+                        child: Icon(Icons.person, color: Colors.white38),
+                      ),
+                    ),
+                  )
+                : const CircleAvatar(
+                    radius: 22,
+                    backgroundColor: Color(0xFF282436),
+                    child: Icon(Icons.person, color: Colors.white38),
+                  ),
           ),
           title: Text(m.name,
               style: const TextStyle(
@@ -862,11 +877,29 @@ class _MembersScreenState extends State<MembersScreen> {
               const SizedBox(height: 24),
               
               // Avatar
-              CircleAvatar(
-                radius: 46,
-                backgroundColor: const Color(0xFF282436),
-                backgroundImage: m.avatar.isNotEmpty ? NetworkImage(m.avatar) : null,
-                child: m.avatar.isEmpty ? const Icon(Icons.person, size: 40, color: Colors.white38) : null,
+              SizedBox(
+                width: 92,
+                height: 92,
+                child: m.avatar.isNotEmpty
+                    ? ClipOval(
+                        child: Image.network(
+                          m.avatar,
+                          width: 92,
+                          height: 92,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (_, __, ___) => const CircleAvatar(
+                            radius: 46,
+                            backgroundColor: Color(0xFF282436),
+                            child: Icon(Icons.person, size: 40, color: Colors.white38),
+                          ),
+                        ),
+                      )
+                    : const CircleAvatar(
+                        radius: 46,
+                        backgroundColor: Color(0xFF282436),
+                        child: Icon(Icons.person, size: 40, color: Colors.white38),
+                      ),
               ),
               const SizedBox(height: 16),
               

@@ -742,74 +742,91 @@ class _WebViewScreenState extends State<WebViewScreen> {
                             return NavigationActionPolicy.ALLOW;
                           },
                           shouldInterceptRequest: (controller, request) async {
-                            // ── Comment highlight injection ──────────────────────────────
-                            // Android's WebViewClient.onPageFinished only fires for the
-                            // main frame, so UserScript with forMainFrameOnly:false cannot
-                            // reach the cross-origin Disqus iframe.
-                            // Instead, we intercept Disqus CDN CSS files at the network
-                            // layer and append our highlight CSS to them before the browser
-                            // sees the response. Works for every frame, any origin.
-                            if (commentHighlight != 'default') {
-                              final url = request.url.toString();
-                              if (url.contains('c.disquscdn.com') && url.contains('.css')) {
-                                // Return cached version if available
-                                if (_modifiedCssCache.containsKey(url)) {
-                                  return WebResourceResponse(
-                                    contentType: 'text/css; charset=utf-8',
-                                    statusCode: 200,
-                                    reasonPhrase: 'OK',
-                                    // no-cache: browser must re-request on every
-                                    // page load so shouldInterceptRequest always
-                                    // fires and we can re-inject our highlight CSS
-                                    headers: {
-                                      'Content-Type': 'text/css; charset=utf-8',
-                                      'Cache-Control': 'no-cache, no-store, must-revalidate',
-                                      'Pragma': 'no-cache',
-                                    },
-                                    data: _modifiedCssCache[url],
-                                  );
-                                }
-                                // Fetch original CSS and append highlight rules
-                                try {
-                                  final client = HttpClient();
-                                  final req = await client.getUrl(Uri.parse(url));
-                                  req.headers.set('Accept', 'text/css,*/*');
-                                  final res = await req.close().timeout(const Duration(seconds: 8));
-                                  final bytes = await res
-                                      .fold<List<int>>([], (buf, chunk) => buf..addAll(chunk));
-                                  final origCss = utf8.decode(bytes, allowMalformed: true);
+                            // Always intercept Disqus CDN CSS to inject:
+                            //  1. Ad-hiding rules (always active)
+                            //  2. Comment highlight styles (only when enabled)
+                            // This is the only way to reach the cross-origin
+                            // Disqus iframe — UserScripts can't cross origins.
+                            final reqUrl = request.url.toString();
+                            if (reqUrl.contains('c.disquscdn.com') && reqUrl.contains('.css')) {
+                              // Serve cached modified CSS if available
+                              if (_modifiedCssCache.containsKey(reqUrl)) {
+                                return WebResourceResponse(
+                                  contentType: 'text/css; charset=utf-8',
+                                  statusCode: 200,
+                                  reasonPhrase: 'OK',
+                                  headers: {
+                                    'Content-Type': 'text/css; charset=utf-8',
+                                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                    'Pragma': 'no-cache',
+                                  },
+                                  data: _modifiedCssCache[reqUrl],
+                                );
+                              }
+                              try {
+                                final client = HttpClient();
+                                final req = await client.getUrl(Uri.parse(reqUrl));
+                                req.headers.set('Accept', 'text/css,*/*');
+                                final res = await req.close().timeout(const Duration(seconds: 8));
+                                final bytes = await res
+                                    .fold<List<int>>([], (buf, chunk) => buf..addAll(chunk));
+                                final origCss = utf8.decode(bytes, allowMalformed: true);
 
+                                // Build highlight CSS only when the user enabled it
+                                String highlightCss = '';
+                                if (commentHighlight != 'default') {
                                   final hlBg = commentHighlight == 'dark'
                                       ? 'rgba(0,0,0,0.78)'
                                       : 'rgba(255,255,255,0.86)';
                                   final hlFg = commentHighlight == 'dark'
                                       ? '#ffffff'
                                       : '#111111';
-
-                                  final extraCss = '''
+                                  highlightCss = '''
 /* === Abyss comment highlight === */
 .post-message{background-color:$hlBg!important;border-radius:6px!important;padding:6px 10px!important;}
 .post-message p,.post-message span,.post-message a{color:$hlFg!important;background:transparent!important;}
 ''';
-                                  final combined =
-                                      Uint8List.fromList(utf8.encode(origCss + extraCss));
-                                  _modifiedCssCache[url] = combined;  // cache it
-                                  client.close();
-
-                                  return WebResourceResponse(
-                                    contentType: 'text/css; charset=utf-8',
-                                    statusCode: 200,
-                                    reasonPhrase: 'OK',
-                                    headers: {
-                                      'Content-Type': 'text/css; charset=utf-8',
-                                      'Cache-Control': 'no-cache, no-store, must-revalidate',
-                                      'Pragma': 'no-cache',
-                                    },
-                                    data: combined,
-                                  );
-                                } catch (_) {
-                                  // On any error let the browser load it normally
                                 }
+
+                                // Ad-hiding always injected regardless of highlight setting
+                                const adCss = '''
+/* === Abyss Ad Blocker === */
+#discovery, .discovery, [data-tracking-area="discovery"], [data-tracking-area="promoted"],
+#disqus_recommendations, .disqus-recommendations, .disqus-sponsored,
+div[data-ad], div[class*="-ad-"], div[class*="_ad_"],
+.taboola, .outbrain, .sponsored-content,
+div[id^="taboola-"], div[id^="outbrain-"],
+iframe[src*="taboola"], iframe[src*="outbrain"],
+iframe[src*="doubleclick"], iframe[src*="googlesyndication"],
+.adsense, .ad-container, .disqus-ad-container {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+''';
+                                final extraCss = highlightCss + adCss;
+                                final combined =
+                                    Uint8List.fromList(utf8.encode(origCss + extraCss));
+                                _modifiedCssCache[reqUrl] = combined;
+                                client.close();
+
+                                return WebResourceResponse(
+                                  contentType: 'text/css; charset=utf-8',
+                                  statusCode: 200,
+                                  reasonPhrase: 'OK',
+                                  headers: {
+                                    'Content-Type': 'text/css; charset=utf-8',
+                                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                    'Pragma': 'no-cache',
+                                  },
+                                  data: combined,
+                                );
+                              } catch (_) {
+                                // On error let the browser load it normally
                               }
                             }
                             return null; // allow normal loading

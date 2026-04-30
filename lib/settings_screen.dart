@@ -279,71 +279,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Gradient banner header
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.purpleAccent.withValues(alpha: 0.25),
-                        Colors.deepPurple.withValues(alpha: 0.10),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundColor: Colors.purpleAccent.withValues(alpha: 0.2),
-                        child: const Text('Y',
-                            style: TextStyle(
-                                color: Colors.purpleAccent,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 26)),
-                      ),
-                      const SizedBox(width: 14),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Yousuf',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18)),
-                          SizedBox(height: 3),
-                          Text('Dev',
-                              style: TextStyle(
-                                  color: Colors.purpleAccent,
-                                  fontSize: 12)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Hello I made this app! \nIf there are any bugs or suggestions,\nplease DM me on Discord c:',
-                  style: TextStyle(
-                      color: Colors.white70, fontSize: 13, height: 1.6),
-                ),
-                const SizedBox(height: 14),
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.discord, color: Color(0xFF5865F2), size: 13),
-                    SizedBox(width: 6),
-                    Text('DISCORD',
-                        style: TextStyle(
-                            color: Color(0xFF5865F2),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2)),
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: Colors.purpleAccent.withValues(alpha: 0.15),
+                      child: const Text('Y',
+                          style: TextStyle(
+                              color: Colors.purpleAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16)),
+                    ),
+                    const SizedBox(width: 10),
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Yousuf',
+                            style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14)),
+                        Text('Dev',
+                            style: TextStyle(
+                                color: Colors.white30,
+                                fontSize: 11)),
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                const Text(
+                  'Bonjour I made this app! If you find any bugs or you have suggestions, kindly let me know/DM me on Discord c:',
+                  style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.5),
+                ),
+                const SizedBox(height: 10),
                 GestureDetector(
                   onTap: () {
                     Clipboard.setData(const ClipboardData(text: '.5ysf'));
@@ -355,27 +324,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     );
                   },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF5865F2).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF5865F2).withValues(alpha: 0.4)),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.alternate_email_rounded,
-                            color: Color(0xFF5865F2), size: 18),
-                        SizedBox(width: 10),
-                        Text('.5ysf',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14)),
-                        Spacer(),
-                        Icon(Icons.copy_rounded, color: Colors.white38, size: 16),
-                      ],
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.alternate_email_rounded,
+                          color: Color(0xFF5865F2), size: 13),
+                      const SizedBox(width: 5),
+                      const Text('.5ysf',
+                          style: TextStyle(
+                              color: Color(0xFF5865F2),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500)),
+                      const SizedBox(width: 5),
+                      const Icon(Icons.copy_rounded, color: Colors.white24, size: 12),
+                    ],
                   ),
                 ),
               ],
