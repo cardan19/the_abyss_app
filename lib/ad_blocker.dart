@@ -56,7 +56,14 @@ class AdBlocker {
       ),
       action: ContentBlockerAction(
         type: ContentBlockerActionType.CSS_DISPLAY_NONE,
-        selector: ".ad, .ads, .ad-unit, .google-auto-placed, iframe[src*='ads'], iframe[src*='doubleclick'], iframe[src*='soundcloud'], .scp-container, #scmframe, .scm-player, #scmPlayer, .spotify, iframe[src*='spotify']",
+        // General ad class names
+        selector: ".ad, .ads, .ad-unit, .google-auto-placed, iframe[src*='ads'], iframe[src*='doubleclick'], iframe[src*='soundcloud'], .scp-container, #scmframe, .scm-player, #scmPlayer, .spotify, iframe[src*='spotify'], "
+        // Confirmed via DevTools: the golf-course Taboola ad lives at the main
+        // Blogspot page level — NOT inside the Disqus iframe — inside this hierarchy:
+        //   body > #container-recommendations > #ad-container > #taboola1x1 > ...
+        "#container-recommendations, #ad-container, #taboola1x1, "
+        "div[id^='trc_wrapper_'], div[id^='taboola'], .thumbBlock_holder, "
+        ".trc_rbox_container, .trc_spotlight_item, .tbl-trecs-container",
       ),
     ));
 

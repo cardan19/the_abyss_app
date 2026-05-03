@@ -343,6 +343,135 @@ class _WebViewScreenState extends State<WebViewScreen> {
       forMainFrameOnly: false,
     ));
 
+    // ── Taboola / Google ad killer ──────────────────────────────────────────────
+    // Three DevTools sessions confirmed the exact DOM structure. The ad lives at:
+    //   body > #container-recommendations > .ad-content-vertical-center
+    //        > #ad-container > #taboola1x1 > .trc_related_container > ...
+    // Ghost element #tbl-aug-62556 (pattern: div[id^="tbl-aug-"]) causes the
+    // remaining gap even after the main container is removed.
+    //
+    // Key technique from DevTools AI: use .closest('.align--center, .trc_item')
+    // to remove the OUTER spacing wrapper together with the ad — that's what
+    // eliminates the blank gap, not just removing the ad element itself.
+    // ── Taboola / Google ad killer ──────────────────────────────────────────────
+    // DevTools can delete it because DevTools has cross-frame/shadow-dom access.
+    // By setting forMainFrameOnly: false, this script now injects into EVERY
+    // iframe natively, destroying the ad from the inside out.
+    const String adKillerJS = '''
+      (function() {
+        const AD_SELECTORS = [
+          'div#ad-container',
+          '#container-recommendations',
+          '.ad-content-vertical-center',
+          '.trc_related_container',
+          'div[id^="tbl-aug-"]',
+          'div[id^="tbl-"]',
+          'ins.adsbygoogle',
+          '.adsbygoogle',
+          'iframe[id*="google_ads"]',
+          '#taboola1x1',
+          '.tbl-trecs-container',
+          '.trc_rbox_container',
+          '.trc_spotlight_item',
+          '.thumbBlock_holder',
+          '.item-thumbnail-href',
+          '[aria-label*="Taboola"]',
+          '[aria-label*="taboola"]',
+          '[href*="taboola"]'
+        ];
+
+        const nukeElement = (el) => {
+          try {
+            // Hide it permanently just in case the site's JS tries to re-render it
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('opacity', '0', 'important');
+            el.style.setProperty('height', '0', 'important');
+            el.style.setProperty('width', '0', 'important');
+            
+            // Try to find the wrapper gap and kill that too
+            const wrapper = el.closest('.align--center, .trc_item, .trc_related_container, [id*="ad-wrapper"]') || el;
+            wrapper.style.setProperty('display', 'none', 'important');
+            wrapper.style.setProperty('height', '0', 'important');
+            wrapper.style.setProperty('margin', '0', 'important');
+            wrapper.style.setProperty('padding', '0', 'important');
+            wrapper.remove();
+          } catch(e) {}
+        };
+
+        const removeAds = () => {
+          try {
+            AD_SELECTORS.forEach(selector => {
+              document.querySelectorAll(selector).forEach(nukeElement);
+            });
+
+            // Iframe sweep
+            document.querySelectorAll('iframe').forEach(iframe => {
+              try {
+                if (iframe.src && (
+                  iframe.src.includes('ads-iframe') ||
+                  iframe.src.includes('doubleclick') ||
+                  iframe.src.includes('taboola')
+                )) {
+                  nukeElement(iframe);
+                }
+              } catch(e) {}
+            });
+
+            // Catch remaining ghost divs
+            document.querySelectorAll('div[id^="tbl-"], div[class^="tbl-"], [id*="taboola"]')
+              .forEach(nukeElement);
+
+            // Collapse leftover empty body-level divs
+            document.querySelectorAll('body > div, body > section').forEach(div => {
+              try {
+                if (div.innerText.trim() === '' && !div.id.includes('custom-fast-scroller')) {
+                  div.style.setProperty('display', 'none', 'important');
+                  div.style.setProperty('margin', '0', 'important');
+                  div.style.setProperty('padding', '0', 'important');
+                  div.style.setProperty('height', '0', 'important');
+                }
+              } catch(e) {}
+            });
+          } catch(e) {}
+        };
+
+        // 1. Run immediately
+        removeAds();
+
+        // 2. Comprehensive observer optimized for performance
+        const observer = new MutationObserver((mutations) => {
+          let shouldKill = false;
+          for (let mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+              shouldKill = true;
+              break;
+            }
+          }
+          if (shouldKill) removeAds();
+        });
+
+        // Observe the entire document to catch injections anywhere
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true
+        });
+
+        // 3. Fail-safe: Taboola often loads very late. Use Multi-stage execution.
+        window.addEventListener('load', removeAds);
+        setTimeout(removeAds, 2000);
+        setTimeout(removeAds, 5000);
+      })();
+    ''';
+
+    await controller.addUserScript(userScript: UserScript(
+      source: adKillerJS,
+      // DevTools AI highly recommends AT_DOCUMENT_START for MutationObserver setup
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+      // Inject into all frames (Disqus, Taboola iframes)
+      forMainFrameOnly: false,
+    ));
+
+
     // Custom fast-scroll thumb
     final String fastScrollerJS = '''
       (function() {
@@ -681,11 +810,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
                             await Future.delayed(const Duration(milliseconds: 400));
                             if (mounted) {
-                              setState(() {
-                                _isReloadingTheme = false;
-                              });
+                              setState(() { _isReloadingTheme = false; });
                             }
                           },
+
                           onUpdateVisitedHistory: (controller, url, androidIsReload) {
                             if (url != null) {
                               setState(() {
